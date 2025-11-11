@@ -1,0 +1,84 @@
+#include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+ #include <dirent.h>
+ #include <openssl/sha.h>
+ #include <sys/stat.h>
+ #define TABLE_SIZE 100
+ typedef struct Node {
+ char *filepath;
+ char hash[SHA256_DIGEST_LENGTH * 2+1];
+ struct Node *next;
+ } Node;
+ Node*hashTable[TABLE_SIZE] = {NULL};
+ void calculateFileHash(const char *filename, char *output) {
+ FILE *file = fopen(filename, "rb");
+ if (!file) return;
+ unsigned char buffer[1024];
+ unsigned char hash[SHA256_DIGEST_LENGTH];
+ SHA256_CTXsha256;
+ SHA256_Init(&sha256);
+ int bytesRead = 0;
+ while ((bytesRead = fread(buffer, 1, sizeof(buffer), file)) != 0) {
+ SHA256_Update(&sha256, buffer, bytesRead);
+ }
+ SHA256_Final(hash, &sha256);
+ for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+ sprintf(output + (i * 2), "%02x", hash[i]);
+ }
+ output[SHA256_DIGEST_LENGTH * 2] = '\0';
+ fclose(file);
+ }
+unsigned int hashIndex(const char *hash) {
+ unsigned int index = 0;
+ for (int i = 0; i < strlen(hash); i++) {
+ index = (index * 31 +hash[i]) % TABLE_SIZE;
+ }
+ return index;
+ }
+ void insertFile(const char *filepath, const char *hash) {
+ unsigned int index = hashIndex(hash);
+ Node*newNode=(Node*)malloc(sizeof(Node));
+ newNode->filepath = strdup(filepath);
+ strcpy(newNode->hash, hash);
+ newNode->next = NULL;
+ Node*current = hashTable[index];
+ while (current) {
+ if (strcmp(current->hash, hash) == 0) {
+ printf("\nDuplicate Found:\n");
+ printf(" %s\n %s\n", current->filepath, filepath);
+ free(newNode->filepath);
+ free(newNode);
+ return;
+ }
+ current = current->next;
+ }
+ newNode->next = hashTable[index];
+ hashTable[index] = newNode;
+ }
+ void scanDirectory(const char *dirpath) {
+ DIR *dir = opendir(dirpath);
+ if (!dir) {
+ printf("Cannot open directory: %s\n", dirpath);
+ return;
+ }
+ struct dirent *entry;
+ char filepath[512];
+ while ((entry = readdir(dir)) != NULL) {
+ if (entry->d_type == DT_REG) {
+ snprintf(filepath, sizeof(filepath), "%s/%s", dirpath, entry->d_name);
+ char fileHash[SHA256_DIGEST_LENGTH * 2 + 1];
+ calculateFileHash(filepath, fileHash);
+ insertFile(filepath, fileHash);
+ }
+ }
+ closedir(dir);
+ }
+ int main() {
+ char dirpath[256];
+ printf("Enter directory path to scan: ");
+ scanf("%s", dirpath);
+ scanDirectory(dirpath);
+ printf("\nScan complete.\n");
+ return 0;
+ }
